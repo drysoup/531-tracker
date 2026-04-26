@@ -531,7 +531,7 @@ function App() {
                   {mode === "direct" ? (
                     <div>
                       <label style={{fontSize:13, fontWeight:600, color:"var(--text-2)", display:"block", marginBottom:8}}>1RM in kg</label>
-                      <input type="number" placeholder="e.g. 140" value={maxes[lift]}
+                      <input type="number" inputMode="decimal" placeholder="e.g. 140" value={maxes[lift]}
                         onChange={ev=>setMaxes(p=>({...p,[lift]:ev.target.value}))}
                         style={inputSt}
                         onFocus={ev=>ev.target.style.borderColor="var(--green)"}
@@ -542,7 +542,7 @@ function App() {
                       <div style={{display:"flex", gap:10}}>
                         <div style={{flex:1}}>
                           <label style={{fontSize:13, fontWeight:600, color:"var(--text-2)", display:"block", marginBottom:8}}>Weight (kg)</label>
-                          <input type="number" placeholder="120" value={e.w}
+                          <input type="number" inputMode="decimal" placeholder="120" value={e.w}
                             onChange={ev=>setEst(p=>({...p,[lift]:{...p[lift],w:ev.target.value}}))}
                             style={inputSt}
                             onFocus={ev=>ev.target.style.borderColor="var(--green)"}
@@ -550,7 +550,7 @@ function App() {
                         </div>
                         <div style={{flex:1}}>
                           <label style={{fontSize:13, fontWeight:600, color:"var(--text-2)", display:"block", marginBottom:8}}>Reps done</label>
-                          <input type="number" placeholder="8" value={e.r}
+                          <input type="number" inputMode="numeric" placeholder="8" value={e.r}
                             onChange={ev=>setEst(p=>({...p,[lift]:{...p[lift],r:ev.target.value}}))}
                             style={inputSt}
                             onFocus={ev=>ev.target.style.borderColor="var(--green)"}

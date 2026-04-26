@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>5/3/1 Powerbuilding</title>
+  <style>
+    :root {
+      --bg:        #0F0F13;
+      --s1:        #16161C;
+      --s2:        #1D1D26;
+      --s3:        #24242F;
+      --border:    #2C2C3A;
+      --green:     #00EB9D;
+      --green-bg:  #001D14;
+      --green-mid: #003D28;
+      --text-1:    #EDEEF2;
+      --text-2:    #7C7E96;
+      --text-3:    #686A84;
+      --red:       #F06060;
+      --red-bg:    #2A1010;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; color: var(--text-1); }
+    button, input, select { font-family: inherit; color: inherit; }
+    button { cursor: pointer; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--s1); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    @keyframes slideDown { from { opacity:0; transform:translateY(-6px) } to { opacity:1; transform:translateY(0) } }
+    @keyframes fadeIn    { from { opacity:0 } to { opacity:1 } }
+    @keyframes pulse     { 0%,100% { opacity:1 } 50% { opacity:.5 } }
+    .slide-down  { animation: slideDown .18s ease forwards; }
+    .fade-in     { animation: fadeIn .2s ease forwards; }
+    .pulse       { animation: pulse 2s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect, useRef } = React;
+
+/* ─── Data ──────────────────────────────────────────────────────────────── */
+
+const LIFTS      = ["squat","bench","deadlift","ohp"];
+const LIFT_NAME  = { squat:"Back Squat", bench:"Bench Press", deadlift:"Deadlift", ohp:"OHP" };
+const LIFT_INC   = { squat:5, bench:2.5, deadlift:5, ohp:2.5 };
+const LIFT_EMOJI = { squat:"🏋️", bench:"💪", deadlift:"🔱", ohp:"🎯" };
+const LIFT_DAY   = { squat:"Monday", bench:"Tuesday", deadlift:"Thursday", ohp:"Friday" };
+const LIFT_SUB   = { squat:"Squat + Legs", bench:"Bench + Upper", deadlift:"Deadlift + Legs", ohp:"OHP + Upper" };
+
+const WEEK_SCHEMES = [
+  [[.65,5],[.75,5],[.85,"5+"]],
+  [[.70,3],[.80,3],[.90,"3+"]],
+  [[.75,5],[.85,3],[.95,"1+"]],
+  [[.40,5],[.50,5],[.60,5]],
+];
+const WARMUP = [[.40,5],[.50,5],[.60,3]];
+const WEEK_LABEL = ["Week 1","Week 2","Week 3","Week 4 — Deload"];
+const WEEK_SUB   = ["5s","3s","5/3/1","Deload"];
+
+const WEEK_DAYS = [
+  {type:"lift",key:"squat"},
+  {type:"lift",key:"bench"},
+  {type:"cond",key:"cond0"},
+  {type:"lift",key:"deadlift"},
+  {type:"lift",key:"ohp"},
+  {type:"cond",key:"cond1"},
+  {type:"rest"},
+];
+
+const COND = [
+  { day:"Wednesday", emoji:"🏃", sub:"Conditioning",
+    sections:[
+      {title:"Option A — LISS",      items:["30–45 min incline walk · 12–15% grade · 3.0–3.5 mph"]},
+      {title:"Option B — HIIT",      items:["Bike or Rower: 10 × 30 s sprint / 60 s rest"]},
+      {title:"Option C — Strongman", items:["Sled Push — 6–8 × 40 yd","Farmer's Walks — 4 × 60 yd","Battle Ropes — 4 × 30 s"]},
+      {title:"Bonus Legs",           items:["Sissy Squats — 3 × 15","Seated Calf Raises — 4 × 20"]},
+    ]},
+  { day:"Saturday", emoji:"⚡", sub:"Conditioning + Legs",
+    sections:[
+      {title:"Conditioning", items:["30–40 min Stairmaster, cycling, or swimming"]},
+      {title:"Leg Pump",     items:["Goblet Squats — 3 × 15","Leg Press light — 3 × 20","Nordic Curls — 3 × 6–8","Calf Raises — 4 × 20","Hip Thrusts — 3 × 12–15"]},
+    ]},
+];
+
+const ACC = {
+  size: {
+    label:"More Size",
+    squat:[
+      {title:"Leg Hypertrophy",items:["Leg Press — 4 × 12–15","Romanian Deadlift — 3 × 10–12","Walking Lunges — 3 × 12/leg","Leg Curls — 4 × 12–15","Leg Extensions — 4 × 15–20 slow","Calf Raises — 5 × 15–20"]},
+      {title:"Core",           items:["Hanging Leg Raises — 3 × 12","Ab Wheel — 3 × 10"]},
+    ],
+    bench:[{title:"Upper",items:["Barbell Rows — 4 × 8–10","DB Incline Press — 3 × 10–12","Lat Pulldown — 4 × 10–12","Lateral Raises — 4 × 15–20","Face Pulls — 3 × 15–20","EZ Curls — 3 × 10–12","Tricep Pushdowns — 3 × 12–15"]}],
+    deadlift:[
+      {title:"Leg Hypertrophy",items:["Front Squats — 4 × 8–10","Bulgarian Split Squats — 3 × 10","GHR — 4 × 8–12","Hack Squat — 3 × 12–15","Adductor Machine — 3 × 15","Seated Calf Raises — 5 × 15–20"]},
+      {title:"Core",           items:["Cable Woodchops — 3 × 12/side","Planks — 3 × 45–60 s"]},
+    ],
+    ohp:[{title:"Upper",items:["Weighted Chin-Ups — 4 × 6–8","DB Shoulder Press — 3 × 10–12","Cable Rows — 4 × 10–12","Chest Flyes — 3 × 12–15","Rear Delt Flyes — 3 × 15–20","Hammer Curls — 3 × 10–12","OH Tricep Ext — 3 × 12–15"]}],
+  },
+  legs: {
+    label:"Bigger Legs",
+    squat:[
+      {title:"Leg Volume",items:["Hack Squat — 5 × 10–12","Leg Press — 4 × 15–20","Bulgarian Split Squats — 4 × 12/leg","Nordic Curls — 4 × 6–8","Leg Curls — 4 × 15","Seated Calf Raises — 6 × 15–20","Standing Calf Raises — 4 × 20"]},
+      {title:"Core",      items:["Dragon Flags — 3 × 6","Pallof Press — 3 × 12"]},
+    ],
+    bench:[{title:"Upper Support",items:["Barbell Rows — 4 × 8–10","Lat Pulldown — 4 × 10–12","Face Pulls — 4 × 20","Lateral Raises — 4 × 15","EZ Curls — 3 × 10","Tricep Dips — 3 × 12"]}],
+    deadlift:[
+      {title:"Posterior Chain",items:["Good Mornings — 4 × 8–10","Reverse Hypers — 4 × 12–15","GHR — 4 × 10","Hip Thrusts — 4 × 12–15","Adductor Machine — 4 × 15","Sissy Squats — 4 × 15","Calf Raises — 6 × 20"]},
+      {title:"Core",           items:["Cable Woodchops — 3 × 12","Ab Wheel — 3 × 10"]},
+    ],
+    ohp:[{title:"Upper Support",items:["Weighted Pull-Ups — 4 × 6–8","Cable Rows — 4 × 10","Rear Delt Machine — 4 × 15–20","Lateral Raises — 4 × 20","Hammer Curls — 3 × 12","Close-Grip Bench — 3 × 10"]}],
+  },
+  strength: {
+    label:"Raw Strength",
+    squat:[
+      {title:"Strength Carry-over",items:["Pause Squats — 4 × 3–5 @ 70%","Box Squats — 4 × 5","Leg Press heavy — 3 × 8–10","GHR — 3 × 8","Calf Raises — 4 × 15"]},
+      {title:"Core",               items:["Weighted Planks — 4 × 45 s","Landmine Rotations — 3 × 10"]},
+    ],
+    bench:[{title:"Pressing Strength",items:["Close-Grip Bench — 4 × 5","DB Floor Press — 3 × 8","Barbell Rows — 5 × 5","Face Pulls — 4 × 15","JM Press — 3 × 8","Band Pull-Aparts — 4 × 20"]}],
+    deadlift:[
+      {title:"Pull Strength",items:["Deficit Deadlift — 4 × 3 @ 70%","RDL heavy — 4 × 6–8","Barbell Hip Thrust — 4 × 8","Leg Curls — 4 × 10","Back Extensions weighted — 4 × 12","Calf Raises — 4 × 15"]},
+      {title:"Core",         items:["Farmer's Carry — 4 × 40 m","Suitcase Carry — 3 × 30 m/side"]},
+    ],
+    ohp:[{title:"Overhead Strength",items:["Push Press — 4 × 5","Z-Press — 3 × 8","Weighted Pull-Ups — 5 × 5","Barbell Row — 4 × 6","Bradford Press — 3 × 10","Cable Rows — 4 × 8"]}],
+  },
+};
+
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
+
+const snap  = v  => Math.round(v / 2.5) * 2.5;
+const wt    = (tm,p) => tm ? snap(tm * p) : null;
+const fmt   = w  => w === null ? "—" : `${w} kg`;
+const pad2  = n  => String(n).padStart(2,"0");
+const e1rm  = (w,r) => (!w||!r||r<1) ? 0 : r===1 ? w : Math.round(w*(1+r/30));
+
+function buildSets(tm, wk) {
+  const s = WEEK_SCHEMES[wk];
+  const bPct = wk===3 ? .40 : .55, bSets = wk===3 ? 3 : 5;
+  return {
+    warmup:  WARMUP.map(([p,r]) => ({weight:wt(tm,p), reps:r, pct:Math.round(p*100)})),
+    working: s.map(([p,r])      => ({weight:wt(tm,p), reps:r, pct:Math.round(p*100)})),
+    bbb: {weight:wt(tm,bPct), sets:bSets, reps:10},
+  };
+}
+
+/* ─── Shared UI atoms ────────────────────────────────────────────────────── */
+
+const card = (extra={}) => ({
+  background:"var(--s1)", border:"1px solid var(--border)",
+  borderRadius:14, ...extra,
+});
+
+const pill = (active, extra={}) => ({
+  display:"inline-flex", alignItems:"center",
+  padding:"3px 10px", borderRadius:99, fontSize:12, fontWeight:700,
+  background: active ? "var(--green-bg)" : "var(--s3)",
+  color:       active ? "var(--green)"   : "var(--text-2)",
+  border:      active ? "1px solid var(--green-mid)" : "1px solid transparent",
+  ...extra,
+});
+
+/* ─── RestTimer ──────────────────────────────────────────────────────────── */
+
+function RestTimer() {
+  const [secs, setSecs]       = useState(null);
+  const [running, setRunning] = useState(false);
+  const tid = useRef(null);
+
+  useEffect(() => {
+    if (running && secs > 0) { tid.current = setTimeout(() => setSecs(s=>s-1), 1000); }
+    else if (secs === 0)     { setRunning(false); }
+    return () => clearTimeout(tid.current);
+  }, [running, secs]);
+
+  const start = d => { clearTimeout(tid.current); setSecs(d); setRunning(true); };
+  const reset = () => { clearTimeout(tid.current); setSecs(null); setRunning(false); };
+
+  const done = secs === 0;
+  const m = secs !== null ? Math.floor(secs/60) : 0;
+  const s = secs !== null ? secs%60 : 0;
+  const urgent = secs !== null && secs <= 10 && !done;
+
+  return (
+    <div style={{marginTop:20, paddingTop:18, borderTop:"1px solid var(--border)"}}>
+      <div style={{fontSize:11, fontWeight:600, letterSpacing:"0.1em", color:"var(--text-3)", textTransform:"uppercase", marginBottom:12}}>Rest Timer</div>
+      {secs === null ? (
+        <div style={{display:"flex", gap:8}}>
+          {[[60,"1:00"],[90,"1:30"],[180,"3:00"]].map(([d,l]) => (
+            <button key={d} onClick={()=>start(d)} style={{
+              flex:1, padding:"11px 0", borderRadius:10, border:"1px solid var(--border)",
+              background:"var(--s2)", color:"var(--text-1)", fontSize:15, fontWeight:700,
+              transition:"background .15s, border-color .15s",
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--green)";e.currentTarget.style.color="var(--green)"}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.color="var(--text-1)"}}
+            >{l}</button>
+          ))}
+        </div>
+      ) : (
+        <div style={{display:"flex", alignItems:"center", gap:16}}>
+          <div style={{
+            fontSize:44, fontWeight:900, letterSpacing:"-0.03em", minWidth:100, fontVariantNumeric:"tabular-nums",
+            color: done ? "var(--green)" : urgent ? "var(--red)" : "var(--text-1)",
+            transition:"color .3s",
+          }}>
+            {done ? "Done ✓" : `${m}:${pad2(s)}`}
+          </div>
+          <div style={{display:"flex", gap:8, flex:1}}>
+            {!done && (
+              <button onClick={()=>setRunning(r=>!r)} style={{
+                flex:1, padding:"10px 0", borderRadius:10, border:"none",
+                background: running ? "var(--s3)" : "var(--green-bg)",
+                color:       running ? "var(--text-2)" : "var(--green)",
+                fontSize:14, fontWeight:700,
+              }}>{running ? "Pause" : "Resume"}</button>
+            )}
+            <button onClick={reset} style={{
+              flex:1, padding:"10px 0", borderRadius:10, border:"1px solid var(--border)",
+              background:"transparent", color:"var(--text-2)", fontSize:14, fontWeight:700,
+            }}>Reset</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── SetRow ─────────────────────────────────────────────────────────────── */
+
+function SetRow({label, weight, reps, isAmrap, hasTM, done, onToggle}) {
+  return (
+    <div onClick={onToggle} style={{
+      display:"flex", alignItems:"center", gap:14, padding:"12px 16px",
+      borderBottom:"1px solid var(--border)", cursor:"pointer",
+      background: done ? "var(--green-bg)" : "transparent",
+      transition:"background .12s",
+    }}>
+      {/* Check circle */}
+      <div style={{
+        width:20, height:20, borderRadius:"50%", flexShrink:0,
+        border: done ? "none" : "1.5px solid var(--text-3)",
+        background: done ? "var(--green)" : "transparent",
+        display:"flex", alignItems:"center", justifyContent:"center",
+        transition:"all .15s",
+      }}>
+        {done && <svg width="11" height="8" viewBox="0 0 11 8" fill="none"><path d="M1 3.5L4 6.5L10 1" stroke="#001D14" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      </div>
+
+      {/* Pct label */}
+      <span style={{fontSize:13, color:"var(--text-3)", minWidth:34, fontVariantNumeric:"tabular-nums"}}>{label}</span>
+
+      {/* Weight */}
+      <span style={{
+        fontSize: hasTM ? 24 : 17, fontWeight:800, flex:1,
+        color: done ? "var(--green)" : "var(--text-1)",
+        textDecoration: done ? "line-through" : "none",
+        opacity: done ? .6 : 1,
+        transition:"all .12s",
+      }}>
+        {hasTM ? weight : `${reps} reps`}
+      </span>
+
+      {/* Reps */}
+      {hasTM && (
+        <span style={{fontSize:16, color: done ? "var(--green)" : "var(--text-2)", opacity: done ? .6 : 1}}>× {reps}</span>
+      )}
+
+      {/* AMRAP badge */}
+      {isAmrap && (
+        <span style={{
+          fontSize:11, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase",
+          padding:"3px 8px", borderRadius:6,
+          background:"var(--green-mid)", color:"var(--green)",
+          border:"1px solid var(--green)",
+        }}>Max reps</span>
+      )}
+    </div>
+  );
+}
+
+/* ─── GoalModal ──────────────────────────────────────────────────────────── */
+
+function GoalModal({onSelect}) {
+  const goals = [
+    {key:"size",     emoji:"📐", label:"More Size",    desc:"High volume, hypertrophy-focused accessories"},
+    {key:"legs",     emoji:"🦵", label:"Bigger Legs",  desc:"Posterior chain & leg volume blast"},
+    {key:"strength", emoji:"⚡", label:"Raw Strength", desc:"Heavy carry-over work, strength accessories"},
+  ];
+  return (
+    <div className="fade-in" style={{
+      position:"fixed", inset:0, background:"rgba(0,0,0,.75)",
+      display:"flex", alignItems:"center", justifyContent:"center", zIndex:100, padding:20,
+    }}>
+      <div style={{...card(), padding:28, maxWidth:400, width:"100%"}}>
+        <div style={{marginBottom:24}}>
+          <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:8}}>
+            <div style={{width:8, height:8, borderRadius:"50%", background:"var(--green)"}} className="pulse" />
+            <span style={{fontSize:12, fontWeight:600, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-2)"}}>12 Weeks Complete</span>
+          </div>
+          <div style={{fontSize:24, fontWeight:800, color:"var(--text-1)", marginBottom:6}}>New Block Starting</div>
+          <div style={{fontSize:15, color:"var(--text-2)"}}>Choose your focus for the next 12 weeks. This determines which accessory exercises you'll use.</div>
+        </div>
+        <div style={{display:"flex", flexDirection:"column", gap:10}}>
+          {goals.map(g => (
+            <button key={g.key} onClick={()=>onSelect(g.key)} style={{
+              padding:"16px 18px", borderRadius:12, border:"1px solid var(--border)",
+              background:"var(--s2)", textAlign:"left", display:"flex", alignItems:"center", gap:14,
+              transition:"border-color .15s, background .15s",
+            }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--green)";e.currentTarget.style.background="var(--green-bg)"}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.background="var(--s2)"}}
+            >
+              <span style={{fontSize:26}}>{g.emoji}</span>
+              <div>
+                <div style={{fontSize:16, fontWeight:700, color:"var(--text-1)", marginBottom:3}}>{g.label}</div>
+                <div style={{fontSize:13, color:"var(--text-2)"}}>{g.desc}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Persistence ────────────────────────────────────────────────────────── */
+
+const STORAGE_KEY = '531-data';
+function loadSaved() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+}
+
+/* ─── App ────────────────────────────────────────────────────────────────── */
+
+function App() {
+  const [tab,           setTab]           = useState("maxes");
+  const [expandedDay,   setExpandedDay]   = useState(null);
+  const [calcMode,      setCalcMode]      = useState({squat:"direct",bench:"direct",deadlift:"direct",ohp:"direct"});
+  const [est,           setEst]           = useState({squat:{w:"",r:""},bench:{w:"",r:""},deadlift:{w:"",r:""},ohp:{w:"",r:""}});
+  const [showGoal,      setShowGoal]      = useState(false);
+
+  // Persisted state — loaded from localStorage on first render
+  const _s = loadSaved();
+  const [maxes,         setMaxes]         = useState(() => _s.maxes      || {squat:"",bench:"",deadlift:"",ohp:""});
+  const [done,          setDone]          = useState(() => _s.done        || {});
+  const [startDate,     setStartDate]     = useState(() => _s.startDate   || "");
+  const [paused,        setPaused]        = useState(() => _s.paused      ?? false);
+  const [cyclesDone,    setCyclesDone]    = useState(() => _s.cyclesDone  || 0);
+  const [goal,          setGoal]          = useState(() => _s.goal        || "size");
+  const [advanced,      setAdvanced]      = useState(() => _s.advanced    || {});
+  const [activeWeek,    setActiveWeek]    = useState(() => _s.activeWeek  || 0);
+
+  // Save to localStorage whenever any persisted state changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(
+      {maxes, done, startDate, paused, cyclesDone, goal, advanced, activeWeek}
+    ));
+  }, [maxes, done, startDate, paused, cyclesDone, goal, advanced, activeWeek]);
+
+  const tm = useMemo(() => Object.fromEntries(
+    LIFTS.map(l => { const v=parseFloat(maxes[l]); return [l, v>0 ? snap(v*.9) : 0]; })
+  ), [maxes]);
+
+  const sets = useMemo(() => Object.fromEntries(
+    LIFTS.map(l => [l, buildSets(tm[l], activeWeek)])
+  ), [tm, activeWeek]);
+
+  const toggle = key => setDone(p => ({...p, [key]:!p[key]}));
+
+  const weekDone = wk => LIFTS.every(l => [0,1,2].every(i => done[`${wk}-${l}-work-${i}`]));
+  const liftDoneCount = (wk,l) => [0,1,2].filter(i => done[`${wk}-${l}-work-${i}`]).length;
+
+  const unlocked = useMemo(() => {
+    const u = new Set([0]);
+    for (let i=0;i<3;i++) if (weekDone(i)) u.add(i+1);
+    return u;
+  }, [done]);
+
+  function advanceLift(lift) {
+    const cur = parseFloat(maxes[lift]); if (!cur) return;
+    const next = cur + LIFT_INC[lift];
+    setMaxes(p => ({...p, [lift]:String(next)}));
+    const newAdv = {...advanced, [lift]:{from:cur, to:next, inc:LIFT_INC[lift]}};
+    setAdvanced(newAdv);
+    if (LIFTS.every(l => newAdv[l])) {
+      const n = cyclesDone + 1;
+      setCyclesDone(n);
+      if (n % 3 === 0) setShowGoal(true);
+      setDone({});
+      setAdvanced({});
+      setActiveWeek(0);
+    }
+  }
+
+  function doEstimate(lift) {
+    const {w,r} = est[lift];
+    const v = e1rm(parseFloat(w), parseInt(r));
+    if (v > 0) setMaxes(p => ({...p, [lift]:String(v)}));
+  }
+
+  const todayInfo = useMemo(() => {
+    if (!startDate || paused) return null;
+    const start = new Date(startDate+"T00:00:00");
+    const today = new Date(); today.setHours(0,0,0,0);
+    const days = Math.floor((today - start) / 86400000);
+    if (days < 0) return null;
+    const wkIdx = Math.floor(days/7) % 4;
+    const dayMap = {1:"squat",2:"bench",4:"deadlift",5:"ohp",3:"cond0",6:"cond1",0:"rest"};
+    return {wkIdx, todayKey:dayMap[new Date().getDay()], day:days+1};
+  }, [startDate, paused]);
+
+  const hasMax = LIFTS.some(l => maxes[l]);
+  const ACC_CUR = ACC[goal];
+
+  const inputSt = {
+    width:"100%", padding:"12px 14px", fontSize:16, borderRadius:10, outline:"none",
+    border:"1px solid var(--border)", background:"var(--s2)", color:"var(--text-1)",
+    transition:"border-color .15s",
+  };
+
+  /* ── render ── */
+  return (
+    <div style={{maxWidth:680, margin:"0 auto", padding:"16px 14px 40px"}}>
+      {showGoal && <GoalModal onSelect={g=>{setGoal(g);setShowGoal(false);}} />}
+
+      {/* Header */}
+      <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:24}}>
+        <div>
+          <div style={{fontSize:26, fontWeight:800, letterSpacing:"-0.02em", color:"var(--text-1)"}}>5/3/1 Powerbuilding</div>
+          <div style={{fontSize:14, color:"var(--text-2)", marginTop:2}}>
+            Strong & Aesthetic · Leg Focused · Fat Loss Conditioning
+            {todayInfo && <span style={{color:"var(--green)", marginLeft:10}}>Day {todayInfo.day} · Week {todayInfo.wkIdx+1}</span>}
+          </div>
+        </div>
+        {/* Start date + pause */}
+        <div style={{display:"flex", gap:8, alignItems:"center"}}>
+          <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}
+            title="Program start date"
+            style={{...inputSt, width:"auto", padding:"8px 10px", fontSize:13}} />
+          <button onClick={()=>setPaused(p=>!p)} style={{
+            padding:"8px 14px", borderRadius:10, border:"1px solid var(--border)",
+            background: paused ? "var(--green-bg)" : "var(--s2)",
+            color:       paused ? "var(--green)"   : "var(--text-2)",
+            fontSize:13, fontWeight:700, whiteSpace:"nowrap",
+            transition:"all .15s",
+          }}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
+        </div>
+      </div>
+
+      {/* Cycle banner */}
+      {Object.keys(advanced).length > 0 && (
+        <div className="slide-down" style={{
+          ...card(), padding:"14px 18px", marginBottom:20,
+          borderColor:"var(--green-mid)", background:"var(--green-bg)",
+        }}>
+          <div style={{display:"flex", justifyContent:"space-between", marginBottom:10}}>
+            <span style={{fontWeight:700, fontSize:15, color:"var(--green)"}}>✓ Weights advanced</span>
+            <button onClick={()=>setAdvanced({})} style={{background:"none",border:"none",color:"var(--text-3)",fontSize:18,lineHeight:1}}>×</button>
+          </div>
+          <div style={{display:"flex", flexWrap:"wrap", gap:8}}>
+            {LIFTS.filter(l=>advanced[l]).map(l => (
+              <div key={l} style={{...pill(true), fontSize:13, gap:6}}>
+                {LIFT_EMOJI[l]} {LIFT_NAME[l]} &nbsp;
+                <span style={{opacity:.6}}>{advanced[l].from}→</span>
+                <strong>{advanced[l].to} kg</strong>
+                <span style={{opacity:.5}}>+{advanced[l].inc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div style={{display:"flex", gap:2, marginBottom:24, background:"var(--s1)", borderRadius:12, padding:4, border:"1px solid var(--border)"}}>
+        {[["maxes","My Maxes"],["program","Program"]].map(([k,label]) => (
+          <button key={k} onClick={()=>setTab(k)} style={{
+            flex:1, padding:"10px 0", borderRadius:9, border:"none", fontSize:15, fontWeight:700,
+            background: tab===k ? "var(--s3)" : "transparent",
+            color:       tab===k ? "var(--text-1)" : "var(--text-2)",
+            transition:"all .15s",
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {/* ══ MAXES ══════════════════════════════════════════════════════════ */}
+      {tab === "maxes" && (
+        <div style={{display:"flex", flexDirection:"column", gap:14}}>
+          {LIFTS.map(lift => {
+            const mode = calcMode[lift];
+            const e    = est[lift];
+            const hasTM = !!maxes[lift];
+            return (
+              <div key={lift} style={card({overflow:"hidden"})}>
+                {/* Card header */}
+                <div style={{padding:"16px 18px", borderBottom:"1px solid var(--border)", display:"flex", alignItems:"center", gap:12}}>
+                  <span style={{fontSize:22}}>{LIFT_EMOJI[lift]}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:17, fontWeight:700, color:"var(--text-1)"}}>{LIFT_NAME[lift]}</div>
+                    <div style={{fontSize:13, color:"var(--text-2)"}}>{LIFT_DAY[lift]} · {LIFT_SUB[lift]}</div>
+                  </div>
+                  {hasTM && (
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:11, color:"var(--text-3)", textTransform:"uppercase", letterSpacing:"0.08em"}}>Training Max</div>
+                      <div style={{fontSize:20, fontWeight:800, color:"var(--green)", fontVariantNumeric:"tabular-nums"}}>{tm[lift]} kg</div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{padding:"16px 18px"}}>
+                  {/* Mode toggle */}
+                  <div style={{display:"flex", gap:6, marginBottom:14, background:"var(--bg)", borderRadius:8, padding:3}}>
+                    {[["direct","Known 1RM"],["estimate","Estimate from reps"]].map(([m,label]) => (
+                      <button key={m} onClick={()=>setCalcMode(p=>({...p,[lift]:m}))} style={{
+                        flex:1, padding:"8px 0", borderRadius:6, border:"none", fontSize:14, fontWeight:600,
+                        background: mode===m ? "var(--s3)" : "transparent",
+                        color:       mode===m ? "var(--text-1)" : "var(--text-2)",
+                        transition:"all .15s",
+                      }}>{label}</button>
+                    ))}
+                  </div>
+
+                  {mode === "direct" ? (
+                    <div>
+                      <label style={{fontSize:13, fontWeight:600, color:"var(--text-2)", display:"block", marginBottom:8}}>1RM in kg</label>
+                      <input type="number" placeholder="e.g. 140" value={maxes[lift]}
+                        onChange={ev=>setMaxes(p=>({...p,[lift]:ev.target.value}))}
+                        style={inputSt}
+                        onFocus={ev=>ev.target.style.borderColor="var(--green)"}
+                        onBlur={ev=>ev.target.style.borderColor="var(--border)"} />
+                    </div>
+                  ) : (
+                    <div style={{display:"flex", flexDirection:"column", gap:10}}>
+                      <div style={{display:"flex", gap:10}}>
+                        <div style={{flex:1}}>
+                          <label style={{fontSize:13, fontWeight:600, color:"var(--text-2)", display:"block", marginBottom:8}}>Weight (kg)</label>
+                          <input type="number" placeholder="120" value={e.w}
+                            onChange={ev=>setEst(p=>({...p,[lift]:{...p[lift],w:ev.target.value}}))}
+                            style={inputSt}
+                            onFocus={ev=>ev.target.style.borderColor="var(--green)"}
+                            onBlur={ev=>ev.target.style.borderColor="var(--border)"} />
+                        </div>
+                        <div style={{flex:1}}>
+                          <label style={{fontSize:13, fontWeight:600, color:"var(--text-2)", display:"block", marginBottom:8}}>Reps done</label>
+                          <input type="number" placeholder="8" value={e.r}
+                            onChange={ev=>setEst(p=>({...p,[lift]:{...p[lift],r:ev.target.value}}))}
+                            style={inputSt}
+                            onFocus={ev=>ev.target.style.borderColor="var(--green)"}
+                            onBlur={ev=>ev.target.style.borderColor="var(--border)"} />
+                        </div>
+                      </div>
+                      <button onClick={()=>doEstimate(lift)} style={{
+                        padding:"12px 0", borderRadius:10, border:"1px solid var(--border)",
+                        background:"var(--s2)", color:"var(--text-1)", fontSize:15, fontWeight:700,
+                        transition:"all .15s",
+                      }}
+                      onMouseEnter={ev=>{ev.currentTarget.style.borderColor="var(--green)";ev.currentTarget.style.color="var(--green)"}}
+                      onMouseLeave={ev=>{ev.currentTarget.style.borderColor="var(--border)";ev.currentTarget.style.color="var(--text-1)"}}>
+                        Calculate 1RM{e.w&&e.r ? ` → ${e1rm(parseFloat(e.w),parseInt(e.r))} kg` : ""}
+                      </button>
+                    </div>
+                  )}
+
+                  {hasTM && (
+                    <div style={{marginTop:12, padding:"10px 14px", background:"var(--bg)", borderRadius:8, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+                      <span style={{fontSize:14, color:"var(--text-2)"}}>1RM: <strong style={{color:"var(--text-1)"}}>{maxes[lift]} kg</strong></span>
+                      <span style={{fontSize:14, color:"var(--text-2)"}}>Training Max: <strong style={{color:"var(--green)"}}>{tm[lift]} kg</strong></span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {hasMax && (
+            <button onClick={()=>setTab("program")} style={{
+              padding:"15px 0", borderRadius:12, border:"none",
+              background:"var(--green)", color:"#1A1A1A", fontSize:16, fontWeight:800,
+              transition:"opacity .15s",
+            }}
+            onMouseEnter={e=>e.currentTarget.style.opacity=".88"}
+            onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+              View My Program →
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ══ PROGRAM ════════════════════════════════════════════════════════ */}
+      {tab === "program" && (
+        <>
+          {!hasMax && (
+            <button onClick={()=>setTab("maxes")} style={{
+              width:"100%", padding:"13px 0", borderRadius:12, border:"1px solid var(--border)",
+              background:"var(--s1)", color:"var(--text-2)", fontSize:15, fontWeight:600, marginBottom:20,
+            }}>
+              ⚠ No maxes entered — tap to add your numbers
+            </button>
+          )}
+
+          {/* Goal + cycle info */}
+          <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:18}}>
+            <span style={pill(true)}>
+              {ACC[goal].label}
+            </span>
+            <span style={{fontSize:13, color:"var(--text-3)"}}>
+              {3 - (cyclesDone%3)} cycles until next accessory review
+            </span>
+          </div>
+
+          {/* Week selector */}
+          <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:20}}>
+            {WEEK_LABEL.map((label,i) => {
+              const isUnlocked = unlocked.has(i);
+              const isActive   = activeWeek === i;
+              const isDone     = weekDone(i);
+              const isToday    = todayInfo && todayInfo.wkIdx === i;
+              const pct = LIFTS.reduce((sum,l)=>sum+liftDoneCount(i,l),0) / 12;
+
+              return (
+                <button key={i} onClick={()=>{ if(isUnlocked){setActiveWeek(i);setExpandedDay(null);} }}
+                  style={{
+                    padding:"12px 8px", borderRadius:12, border:`1px solid ${isActive?"var(--green)":"var(--border)"}`,
+                    background: isActive ? "var(--green-bg)" : "var(--s1)",
+                    color:       !isUnlocked ? "var(--text-3)" : isActive ? "var(--green)" : "var(--text-1)",
+                    cursor:      isUnlocked ? "pointer" : "not-allowed",
+                    textAlign:"center", position:"relative", overflow:"hidden",
+                    transition:"all .15s",
+                  }}>
+                  {/* Progress bar */}
+                  {isUnlocked && pct > 0 && (
+                    <div style={{
+                      position:"absolute", bottom:0, left:0, height:2,
+                      width:`${pct*100}%`, background:"var(--green)", borderRadius:1,
+                      transition:"width .3s",
+                    }} />
+                  )}
+                  <div style={{fontSize:13, fontWeight:700, marginBottom:2}}>
+                    {!isUnlocked ? "🔒" : isDone ? "✓" : isToday ? "●" : ""}&nbsp;{WEEK_LABEL[i].split(" — ")[0]}
+                  </div>
+                  <div style={{fontSize:12, opacity:.7}}>{WEEK_SUB[i]}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Day list */}
+          <div style={{display:"flex", flexDirection:"column", gap:8}}>
+            {WEEK_DAYS.map(day => {
+
+              /* REST */
+              if (day.type === "rest") return (
+                <div key="rest" style={{...card(), padding:"14px 18px", display:"flex", alignItems:"center", gap:14}}>
+                  <span style={{fontSize:24}}>😴</span>
+                  <div>
+                    <div style={{fontSize:16, fontWeight:700, color:"var(--text-1)"}}>Sunday — Rest</div>
+                    <div style={{fontSize:14, color:"var(--text-2)"}}>Foam roll · stretch · light walk</div>
+                  </div>
+                </div>
+              );
+
+              /* CONDITIONING */
+              if (day.type === "cond") {
+                const ci    = parseInt(day.key.replace("cond",""));
+                const cd    = COND[ci];
+                const isOpen   = expandedDay === day.key;
+                const isToday  = todayInfo?.todayKey === day.key;
+                return (
+                  <div key={day.key} style={{...card(), overflow:"hidden", borderColor: isToday ? "var(--green)" : "var(--border)"}}>
+                    <button onClick={()=>setExpandedDay(isOpen?null:day.key)} style={{
+                      width:"100%", display:"flex", alignItems:"center", gap:14,
+                      padding:"16px 18px", border:"none", background:"transparent", textAlign:"left", cursor:"pointer",
+                    }}>
+                      <span style={{fontSize:24}}>{cd.emoji}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:16, fontWeight:700, color:"var(--text-1)", display:"flex", alignItems:"center", gap:8}}>
+                          {cd.day}
+                          {isToday && <span style={pill(true, {fontSize:11})}>Today</span>}
+                        </div>
+                        <div style={{fontSize:14, color:"var(--text-2)"}}>{cd.sub}</div>
+                      </div>
+                      <span style={{color:"var(--text-3)", fontSize:18, transform:isOpen?"rotate(180deg)":"none", transition:"transform .2s"}}>▾</span>
+                    </button>
+                    {isOpen && (
+                      <div className="slide-down" style={{padding:"0 18px 18px", borderTop:"1px solid var(--border)"}}>
+                        {cd.sections.map((sec,j) => (
+                          <div key={j} style={{marginTop:16}}>
+                            <div style={{fontSize:12, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--text-3)", marginBottom:8}}>{sec.title}</div>
+                            {sec.items.map((it,k) => (
+                              <div key={k} style={{fontSize:15, color:"var(--text-1)", padding:"7px 0 7px 14px", borderLeft:"2px solid var(--border)", marginBottom:4}}>{it}</div>
+                            ))}
+                          </div>
+                        ))}
+                        <RestTimer key={day.key} />
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              /* LIFT */
+              const lift     = day.key;
+              const liftSets = sets[lift];
+              const hasTM    = tm[lift] > 0;
+              const isOpen   = expandedDay === lift;
+              const isToday  = todayInfo?.todayKey === lift;
+              const checked  = liftDoneCount(activeWeek, lift);
+              const topSet   = liftSets.working[liftSets.working.length-1];
+              const isLiftDone = checked === 3;
+
+              return (
+                <div key={lift} style={{...card(), overflow:"hidden", borderColor: isToday ? "var(--green)" : "var(--border)"}}>
+                  <button onClick={()=>setExpandedDay(isOpen?null:lift)} style={{
+                    width:"100%", display:"flex", alignItems:"center", gap:14,
+                    padding:"16px 18px", border:"none", background:"transparent", textAlign:"left", cursor:"pointer",
+                  }}>
+                    <span style={{fontSize:24}}>{LIFT_EMOJI[lift]}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:16, fontWeight:700, color:"var(--text-1)", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
+                        {LIFT_DAY[lift]} — {LIFT_SUB[lift]}
+                        {isToday     && <span style={pill(true,  {fontSize:11})}>Today</span>}
+                        {isLiftDone  && <span style={pill(true,  {fontSize:11})}>Done</span>}
+                        {!isLiftDone && checked > 0 && <span style={pill(false, {fontSize:11})}>{checked}/3 sets</span>}
+                      </div>
+                      {hasTM && (
+                        <div style={{fontSize:14, color:"var(--text-2)", marginTop:3, fontVariantNumeric:"tabular-nums"}}>
+                          Top set: <strong style={{color:"var(--text-1)"}}>{fmt(topSet.weight)} × {topSet.reps}</strong>
+                        </div>
+                      )}
+                    </div>
+                    <span style={{color:"var(--text-3)", fontSize:18, transform:isOpen?"rotate(180deg)":"none", transition:"transform .2s"}}>▾</span>
+                  </button>
+
+                  {isOpen && (
+                    <div className="slide-down" style={{borderTop:"1px solid var(--border)"}}>
+
+                      {/* Sets panel */}
+                      <div>
+                        {/* Warm-up */}
+                        <div style={{padding:"12px 18px 0", borderBottom:"1px solid var(--border)"}}>
+                          <div style={{fontSize:11, fontWeight:600, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-3)", padding:"0 0 8px 0"}}>Warm-up</div>
+                        </div>
+                        {liftSets.warmup.map((s,i) => (
+                          <SetRow key={`wu${i}`}
+                            label={`${s.pct}%`} weight={fmt(s.weight)} reps={s.reps} hasTM={hasTM}
+                            done={!!done[`${activeWeek}-${lift}-warmup-${i}`]}
+                            onToggle={()=>toggle(`${activeWeek}-${lift}-warmup-${i}`)} />
+                        ))}
+
+                        {/* Working sets */}
+                        <div style={{padding:"12px 18px 0", borderBottom:"1px solid var(--border)", borderTop:"1px solid var(--border)", marginTop:4}}>
+                          <div style={{fontSize:11, fontWeight:600, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--green)", padding:"0 0 8px 0"}}>
+                            Working Sets — {LIFT_NAME[lift]}
+                          </div>
+                        </div>
+                        {liftSets.working.map((s,i) => {
+                          const isTop = i === liftSets.working.length - 1;
+                          return (
+                            <SetRow key={`ws${i}`}
+                              label={`${s.pct}%`} weight={fmt(s.weight)} reps={s.reps}
+                              isAmrap={isTop} hasTM={hasTM}
+                              done={!!done[`${activeWeek}-${lift}-work-${i}`]}
+                              onToggle={()=>toggle(`${activeWeek}-${lift}-work-${i}`)} />
+                          );
+                        })}
+
+                        {/* BBB */}
+                        <div style={{padding:"12px 18px", borderTop:"1px solid var(--border)", marginTop:4}}>
+                          <div style={{fontSize:11, fontWeight:600, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-3)", marginBottom:8}}>BBB Supplemental</div>
+                          <div style={{fontSize:16, color:"var(--text-1)"}}>
+                            {liftSets.bbb.sets} × {liftSets.bbb.reps} @{" "}
+                            <strong style={{color: hasTM ? "var(--green)" : "var(--text-1)"}}>
+                              {hasTM ? fmt(liftSets.bbb.weight) : "50–60%"}
+                            </strong>
+                            <span style={{color:"var(--text-2)", fontSize:14}}> · 90 s rest</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Accessories */}
+                      <div style={{padding:"16px 18px", borderTop:"1px solid var(--border)", background:"var(--bg)"}}>
+                        {ACC_CUR[lift].map((sec,i) => (
+                          <div key={i} style={{marginBottom: i < ACC_CUR[lift].length-1 ? 18 : 0}}>
+                            <div style={{fontSize:11, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-3)", marginBottom:8}}>{sec.title}</div>
+                            {sec.items.map((it,k) => (
+                              <div key={k} style={{fontSize:15, color:"var(--text-1)", padding:"7px 0 7px 14px", borderLeft:"2px solid var(--border)", marginBottom:4}}>{it}</div>
+                            ))}
+                          </div>
+                        ))}
+
+                        {/* Advance button — Week 4 only */}
+                        {activeWeek === 3 && (
+                          <button onClick={()=>advanceLift(lift)} style={{
+                            width:"100%", marginTop:20, padding:"13px 0", borderRadius:12, border:"none",
+                            background: advanced[lift] ? "var(--green-mid)" : "var(--green)",
+                            color:      advanced[lift] ? "var(--green)"     : "#1A1A1A",
+                            fontSize:15, fontWeight:800, transition:"all .15s",
+                            opacity: advanced[lift] ? .7 : 1,
+                          }}
+                          onMouseEnter={e=>{if(!advanced[lift])e.currentTarget.style.opacity=".88"}}
+                          onMouseLeave={e=>{if(!advanced[lift])e.currentTarget.style.opacity="1"}}>
+                            {advanced[lift]
+                              ? `✓ ${LIFT_NAME[lift]} advanced to ${advanced[lift].to} kg`
+                              : `↑ Advance ${LIFT_NAME[lift]} +${LIFT_INC[lift]} kg`}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Rest timer */}
+                      <div style={{padding:"0 18px 18px"}}>
+                        <RestTimer key={lift} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Footer */}
+      <div style={{marginTop:24, textAlign:"center", fontSize:13, color:"var(--text-3)"}}>
+        Training Max = 90% of 1RM · Tap any set to log it · Week 4 unlocks weight advancement
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -350,21 +350,20 @@ function App() {
 
   // Persisted state — loaded from localStorage on first render
   const _s = loadSaved();
-  const [maxes,         setMaxes]         = useState(() => _s.maxes      || {squat:"",bench:"",deadlift:"",ohp:""});
-  const [done,          setDone]          = useState(() => _s.done        || {});
-  const [startDate,     setStartDate]     = useState(() => _s.startDate   || "");
-  const [paused,        setPaused]        = useState(() => _s.paused      ?? false);
-  const [cyclesDone,    setCyclesDone]    = useState(() => _s.cyclesDone  || 0);
-  const [goal,          setGoal]          = useState(() => _s.goal        || "size");
-  const [advanced,      setAdvanced]      = useState(() => _s.advanced    || {});
-  const [activeWeek,    setActiveWeek]    = useState(() => _s.activeWeek  || 0);
+  const [maxes,         setMaxes]         = useState(() => _s.maxes          || {squat:"",bench:"",deadlift:"",ohp:""});
+  const [done,          setDone]          = useState(() => _s.done            || {});
+  const [cyclesDone,    setCyclesDone]    = useState(() => _s.cyclesDone      || 0);
+  const [goal,          setGoal]          = useState(() => _s.goal            || "size");
+  const [advanced,      setAdvanced]      = useState(() => _s.advanced        || {});
+  const [activeWeek,    setActiveWeek]    = useState(() => _s.activeWeek      || 0);
+  const [lastSessionTs, setLastSessionTs] = useState(() => _s.lastSessionTs   || null);
 
   // Save to localStorage whenever any persisted state changes
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(
-      {maxes, done, startDate, paused, cyclesDone, goal, advanced, activeWeek}
+      {maxes, done, cyclesDone, goal, advanced, activeWeek, lastSessionTs}
     ));
-  }, [maxes, done, startDate, paused, cyclesDone, goal, advanced, activeWeek]);
+  }, [maxes, done, cyclesDone, goal, advanced, activeWeek, lastSessionTs]);
 
   const tm = useMemo(() => Object.fromEntries(
     LIFTS.map(l => { const v=parseFloat(maxes[l]); return [l, v>0 ? snap(v*.9) : 0]; })
@@ -374,7 +373,13 @@ function App() {
     LIFTS.map(l => [l, buildSets(tm[l], activeWeek)])
   ), [tm, activeWeek]);
 
-  const toggle = key => setDone(p => ({...p, [key]:!p[key]}));
+  const toggle = key => {
+    setDone(p => {
+      const next = !p[key];
+      if (next && key.includes("-work-")) setLastSessionTs(Date.now());
+      return {...p, [key]:next};
+    });
+  };
 
   const weekDone = wk => LIFTS.every(l => [0,1,2].every(i => done[`${wk}-${l}-work-${i}`]));
   const liftDoneCount = (wk,l) => [0,1,2].filter(i => done[`${wk}-${l}-work-${i}`]).length;
@@ -407,16 +412,24 @@ function App() {
     if (v > 0) setMaxes(p => ({...p, [lift]:String(v)}));
   }
 
-  const todayInfo = useMemo(() => {
-    if (!startDate || paused) return null;
-    const start = new Date(startDate+"T00:00:00");
-    const today = new Date(); today.setHours(0,0,0,0);
-    const days = Math.floor((today - start) / 86400000);
-    if (days < 0) return null;
-    const wkIdx = Math.floor(days/7) % 4;
-    const dayMap = {1:"squat",2:"bench",4:"deadlift",5:"ohp",3:"cond0",6:"cond1",0:"rest"};
-    return {wkIdx, todayKey:dayMap[new Date().getDay()], day:days+1};
-  }, [startDate, paused]);
+  const daysSince = useMemo(() => {
+    if (!lastSessionTs) return null;
+    return Math.floor((Date.now() - lastSessionTs) / 86400000);
+  }, [lastSessionTs]);
+
+  const sessionLabel = useMemo(() => {
+    if (daysSince === null) return null;
+    if (daysSince === 0) return "Today";
+    if (daysSince === 1) return "Yesterday";
+    return `${daysSince} days ago`;
+  }, [daysSince]);
+
+  const sessionColor = useMemo(() => {
+    if (daysSince === null) return "var(--text-3)";
+    if (daysSince <= 2) return "var(--green)";
+    if (daysSince <= 5) return "#F5A623";
+    return "var(--red)";
+  }, [daysSince]);
 
   const hasMax = LIFTS.some(l => maxes[l]);
   const ACC_CUR = ACC[goal];
@@ -438,23 +451,35 @@ function App() {
           <div style={{fontSize:26, fontWeight:800, letterSpacing:"-0.02em", color:"var(--text-1)"}}>5/3/1 Powerbuilding</div>
           <div style={{fontSize:14, color:"var(--text-2)", marginTop:2}}>
             Strong & Aesthetic · Leg Focused · Fat Loss Conditioning
-            {todayInfo && <span style={{color:"var(--green)", marginLeft:10}}>Day {todayInfo.day} · Week {todayInfo.wkIdx+1}</span>}
           </div>
         </div>
-        {/* Start date + pause */}
-        <div style={{display:"flex", gap:8, alignItems:"center"}}>
-          <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}
-            title="Program start date"
-            style={{...inputSt, width:"auto", padding:"8px 10px", fontSize:13}} />
-          <button onClick={()=>setPaused(p=>!p)} style={{
-            padding:"8px 14px", borderRadius:10, border:"1px solid var(--border)",
-            background: paused ? "var(--green-bg)" : "var(--s2)",
-            color:       paused ? "var(--green)"   : "var(--text-2)",
-            fontSize:13, fontWeight:700, whiteSpace:"nowrap",
-            transition:"all .15s",
-          }}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
+        {/* Last session indicator */}
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:11, fontWeight:600, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-3)", marginBottom:4}}>Last session</div>
+          <div style={{fontSize:18, fontWeight:800, color: sessionColor, fontVariantNumeric:"tabular-nums"}}>
+            {sessionLabel ?? "—"}
+          </div>
         </div>
       </div>
+
+      {/* Gap warning */}
+      {daysSince !== null && daysSince >= 5 && (
+        <div className="slide-down" style={{
+          padding:"14px 18px", borderRadius:14, marginBottom:16,
+          background:"var(--red-bg)", border:`1px solid var(--red)`,
+          display:"flex", alignItems:"center", gap:12,
+        }}>
+          <span style={{fontSize:22}}>⚠️</span>
+          <div>
+            <div style={{fontWeight:700, fontSize:15, color:"var(--red)"}}>
+              {daysSince} days without training
+            </div>
+            <div style={{fontSize:13, color:"var(--text-2)", marginTop:2}}>
+              You can't skip your way to the goal. Get back under the bar.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cycle banner */}
       {Object.keys(advanced).length > 0 && (
@@ -616,13 +641,62 @@ function App() {
             </span>
           </div>
 
+          {/* Training day grid — 4 weeks × 4 lifts */}
+          <div style={{...card(), padding:"16px 18px", marginBottom:20}}>
+            <div style={{fontSize:11, fontWeight:600, letterSpacing:"0.1em", textTransform:"uppercase", color:"var(--text-3)", marginBottom:12}}>
+              Cycle progress — {LIFTS.reduce((s,l)=>[0,1,2,3].reduce((a,w)=>a+([0,1,2].every(i=>done[`${w}-${l}-work-${i}`])?1:0),s),0)} / 16 training days
+            </div>
+            <div style={{display:"grid", gridTemplateColumns:"auto repeat(4, 1fr)", gap:6, alignItems:"center"}}>
+              {/* Header row */}
+              <div />
+              {WEEK_LABEL.map((label,i) => (
+                <div key={i} style={{fontSize:11, textAlign:"center", color: activeWeek===i ? "var(--green)" : "var(--text-3)", fontWeight:700, letterSpacing:"0.05em"}}>
+                  {label.split(" — ")[0]}
+                </div>
+              ))}
+              {/* Lift rows */}
+              {LIFTS.map(lift => (
+                <React.Fragment key={lift}>
+                  <div style={{fontSize:12, color:"var(--text-2)", paddingRight:4, whiteSpace:"nowrap"}}>{LIFT_EMOJI[lift]}</div>
+                  {[0,1,2,3].map(wk => {
+                    const liftDone = [0,1,2].every(i => done[`${wk}-${lift}-work-${i}`]);
+                    const partial  = !liftDone && [0,1,2].some(i => done[`${wk}-${lift}-work-${i}`]);
+                    const locked   = !unlocked.has(wk);
+                    const isActive = activeWeek === wk;
+                    return (
+                      <div key={wk} onClick={()=>{ if(!locked){setActiveWeek(wk);setExpandedDay(lift);} }}
+                        title={`${LIFT_NAME[lift]} · ${WEEK_LABEL[wk]}`}
+                        style={{
+                          height:28, borderRadius:6,
+                          border:`1.5px solid ${liftDone ? "var(--green)" : isActive ? "var(--border)" : "var(--border)"}`,
+                          background: liftDone ? "var(--green-bg)" : partial ? "var(--green-mid)" : locked ? "var(--bg)" : "var(--s2)",
+                          display:"flex", alignItems:"center", justifyContent:"center",
+                          cursor: locked ? "default" : "pointer",
+                          opacity: locked ? .35 : 1,
+                          transition:"all .12s",
+                          outline: isActive ? "1.5px solid var(--green)" : "none",
+                          outlineOffset: 1,
+                        }}>
+                        {liftDone
+                          ? <svg width="10" height="8" viewBox="0 0 11 8" fill="none"><path d="M1 3.5L4 6.5L10 1" stroke="var(--green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          : partial
+                            ? <div style={{width:6, height:6, borderRadius:"50%", background:"var(--green)", opacity:.7}} />
+                            : null
+                        }
+                      </div>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+
           {/* Week selector */}
           <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:20}}>
             {WEEK_LABEL.map((label,i) => {
               const isUnlocked = unlocked.has(i);
               const isActive   = activeWeek === i;
               const isDone     = weekDone(i);
-              const isToday    = todayInfo && todayInfo.wkIdx === i;
               const pct = LIFTS.reduce((sum,l)=>sum+liftDoneCount(i,l),0) / 12;
 
               return (
@@ -644,7 +718,7 @@ function App() {
                     }} />
                   )}
                   <div style={{fontSize:13, fontWeight:700, marginBottom:2}}>
-                    {!isUnlocked ? "🔒" : isDone ? "✓" : isToday ? "●" : ""}&nbsp;{WEEK_LABEL[i].split(" — ")[0]}
+                    {!isUnlocked ? "🔒" : isDone ? "✓" : ""}&nbsp;{WEEK_LABEL[i].split(" — ")[0]}
                   </div>
                   <div style={{fontSize:12, opacity:.7}}>{WEEK_SUB[i]}</div>
                 </button>
@@ -672,9 +746,8 @@ function App() {
                 const ci    = parseInt(day.key.replace("cond",""));
                 const cd    = COND[ci];
                 const isOpen   = expandedDay === day.key;
-                const isToday  = todayInfo?.todayKey === day.key;
                 return (
-                  <div key={day.key} style={{...card(), overflow:"hidden", borderColor: isToday ? "var(--green)" : "var(--border)"}}>
+                  <div key={day.key} style={{...card(), overflow:"hidden"}}>
                     <button onClick={()=>setExpandedDay(isOpen?null:day.key)} style={{
                       width:"100%", display:"flex", alignItems:"center", gap:14,
                       padding:"16px 18px", border:"none", background:"transparent", textAlign:"left", cursor:"pointer",
@@ -683,7 +756,6 @@ function App() {
                       <div style={{flex:1}}>
                         <div style={{fontSize:16, fontWeight:700, color:"var(--text-1)", display:"flex", alignItems:"center", gap:8}}>
                           {cd.day}
-                          {isToday && <span style={pill(true, {fontSize:11})}>Today</span>}
                         </div>
                         <div style={{fontSize:14, color:"var(--text-2)"}}>{cd.sub}</div>
                       </div>
@@ -711,13 +783,12 @@ function App() {
               const liftSets = sets[lift];
               const hasTM    = tm[lift] > 0;
               const isOpen   = expandedDay === lift;
-              const isToday  = todayInfo?.todayKey === lift;
               const checked  = liftDoneCount(activeWeek, lift);
               const topSet   = liftSets.working[liftSets.working.length-1];
               const isLiftDone = checked === 3;
 
               return (
-                <div key={lift} style={{...card(), overflow:"hidden", borderColor: isToday ? "var(--green)" : "var(--border)"}}>
+                <div key={lift} style={{...card(), overflow:"hidden"}}>
                   <button onClick={()=>setExpandedDay(isOpen?null:lift)} style={{
                     width:"100%", display:"flex", alignItems:"center", gap:14,
                     padding:"16px 18px", border:"none", background:"transparent", textAlign:"left", cursor:"pointer",
@@ -726,7 +797,6 @@ function App() {
                     <div style={{flex:1}}>
                       <div style={{fontSize:16, fontWeight:700, color:"var(--text-1)", display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
                         {LIFT_DAY[lift]} — {LIFT_SUB[lift]}
-                        {isToday     && <span style={pill(true,  {fontSize:11})}>Today</span>}
                         {isLiftDone  && <span style={pill(true,  {fontSize:11})}>Done</span>}
                         {!isLiftDone && checked > 0 && <span style={pill(false, {fontSize:11})}>{checked}/3 sets</span>}
                       </div>
